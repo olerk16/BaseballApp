@@ -30,14 +30,24 @@ app.use('/graphql', graphqlHTTP({
 }));
 
 wss.on('connection', (ws) => {
-  ws.on('message', (message) => {
+  ws.on('message', async (message) => {
     console.log(`Received: ${message}`);
-  });
+    const pitchData = JSON.parse(message);
+    const { playerId, pitchCount, speed } = pitchData;
 
-  // Send data periodically
-  setInterval(() => {
-    ws.send(JSON.stringify({ type: 'liveMetricUpdate', data: { playerId: '1', score: Math.random() * 100 } }));
-  }, 5000);
+
+    redisClient.hincrby(`pitcher:${playerId}`, 'pitchCount', 1);
+    redisClient.hset(`pitcher:${playerId}`, 'speed', speed);
+    redisClient.hset(`pitcher:${playerId}`, 'pitchMet', pitchMet);
+    redisClient.hset(`pitcher:${playerId}`, 'targetLocation', targetLocation);
+
+    ws.send(JSON.stringify({
+        type: 'pitchUpdate',
+        data: { playerId, pitchCount, speed, pitchType, pitchMet, targetLocation }
+    }));
+    // Send data to Kinesis for real-time analytics
+    await sendDataToKinesis({ playerId, pitchCount, speed, pitchType, pitchMet, targetLocation });
+});
 });
 
 redisClient.on('connect', () => console.log('Connected to Redis'));
