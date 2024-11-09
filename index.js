@@ -33,55 +33,57 @@ app.use('/graphql', graphqlHTTP({
   graphiql: true, 
 }));
 
-// wss.on('connection', (ws) => {
-//   ws.on('message', async (message) => {
-//     console.log(`Received: ${message}`);
-//     const pitchData = JSON.parse(message);
-//     const { playerId, pitchType, speed, pitchMet, targetLocation } = pitchData;
-
-//     await redisClient.hincrby(`pitcher:${playerId}`, 'totalPitches', 1);
-
-//     if (pitchMet) {
-//         await redisClient.hincrby(`pitcher:${playerId}`, 'pitchesMetTarget', 1);
-//       }
-
-//     await redisClient.hset(`pitcher:${playerId}`, 'speed', speed);
-//     await redisClient.hset(`pitcher:${playerId}`, 'pitchMet', pitchType);
-//     await redisClient.hset(`pitcher:${playerId}`, 'targetLocation', targetLocation);
-
-//       // Retrieve the updated counts from Redis
-//       const totalPitches = await redisClient.hget(`pitcher:${playerId}`, 'totalPitches');
-//       const pitchesMetTarget = await redisClient.hget(`pitcher:${playerId}`, 'pitchesMetTarget');
-
-//       // Calculate accuracy as a ratio
-//       const accuracy = totalPitches > 0 ? pitchesMetTarget / totalPitches : 0;
-
-//     ws.send(JSON.stringify({
-//         type: 'pitchUpdate',
-//         data: { playerId, totalPitches, speed, pitchType, pitchMet, targetLocation, accuracy }
-//     }));
-//     // Send data to Kinesis for real-time analytics
-//     await sendDataToKinesis({ playerId, speed, pitchType, pitchMet, targetLocation, accuracy });
-// });
-// });
-
 wss.on('connection', (ws) => {
-    console.log('Client connected');
-
-    const intervalId = setInterval(() => {
-        const mockData = generateMockData(); 
-        
-        ws.send(JSON.stringify({
-            type: 'pitchUpdate',
-            data: mockData,
-        }));
-    }, 3000);
-
-    ws.on('close', () => {
-        console.log('Client disconnected');
-        clearInterval(intervalId); // Stop sending data when the client disconnects
+    ws.on('message', async (message) => {
+      const pitchData = JSON.parse(message);
+      const { playerId, pitchType, speed, pitchMet, targetLocation } = pitchData;
+  
+      // General Pitch Metrics
+      await redisClient.hincrby(`pitcher:${playerId}`, 'totalPitches', 1);
+      if (pitchMet) await redisClient.hincrby(`pitcher:${playerId}`, 'pitchesMetTarget', 1);
+  
+      // Pitch Type Metrics
+      await redisClient.hincrby(`pitcher:${playerId}:pitchType:${pitchType}`, 'totalPitches', 1);
+      if (pitchMet) await redisClient.hincrby(`pitcher:${playerId}:pitchType:${pitchType}`, 'successfulPitches', 1);
+  
+      // Retrieve counts for real-time success calculations
+      const totalPitches = await redisClient.hget(`pitcher:${playerId}`, 'totalPitches') || 0;
+      const pitchesMetTarget = await redisClient.hget(`pitcher:${playerId}`, 'pitchesMetTarget') || 0;
+      const accuracy = totalPitches > 0 ? pitchesMetTarget / totalPitches : 0;
+  
+      const totalPitchTypes = await redisClient.hget(`pitcher:${playerId}:pitchType:${pitchType}`, 'totalPitches') || 0;
+      const successfulPitchTypes = await redisClient.hget(`pitcher:${playerId}:pitchType:${pitchType}`, 'successfulPitches') || 0;
+      const pitchTypeSuccessRate = totalPitchTypes > 0 ? successfulPitchTypes / totalPitchTypes : 0;
+  
+      // Send WebSocket update to client
+      ws.send(JSON.stringify({
+        type: 'pitchUpdate',
+        data: { playerId, totalPitches, speed, pitchType, pitchMet, targetLocation, accuracy, totalPitchTypes, successfulPitchTypes, pitchTypeSuccessRate }
+      }));
+  
+      // Send data to Kinesis for analytics
+      await sendDataToKinesis({ playerId, speed, pitchType, pitchMet, targetLocation, accuracy, successfulPitchTypes, totalPitchTypes });
     });
-});
+  });
+  
+
+// wss.on('connection', (ws) => {
+//     console.log('Client connected');
+
+//     const intervalId = setInterval(() => {
+//         const mockData = generateMockData(); 
+        
+//         ws.send(JSON.stringify({
+//             type: 'pitchUpdate',
+//             data: mockData,
+//         }));
+//     }, 3000);
+
+//     ws.on('close', () => {
+//         console.log('Client disconnected');
+//         clearInterval(intervalId); // Stop sending data when the client disconnects
+//     });
+// });
 
 
 
