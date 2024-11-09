@@ -8,7 +8,7 @@ function App() {
 
     ws.onmessage = (event) => {
       const message = JSON.parse(event.data);
-      if (message.type === 'liveMetricUpdate') {
+      if (message.type === 'pitchUpdate') {
         setData(message.data);
       }
     };
@@ -18,14 +18,19 @@ function App() {
 
   return (
     <div className="App">
-      <h1>In-Game Player Metrics</h1>
+      <h1>Real-Time Pitching Metrics</h1>
       {data ? (
-        <div>
-          <p>Player ID: {data.playerId}</p>
-          <p>Score: {data.score}</p>
+        <div className="metrics">
+          <p><strong>Player ID:</strong> {data.playerId}</p>
+          <p><strong>Total Pitches:</strong> {data.totalPitches}</p>
+          <p><strong>Pitch Speed:</strong> {data.speed} mph</p>
+          <p><strong>Pitch Type:</strong> {data.pitchType}</p>
+          <p><strong>Target Location:</strong> {data.targetLocation}</p>
+          <p><strong>Accuracy:</strong> {(data.accuracy * 100).toFixed(2)}%</p>
+          <p><strong>Hit Target:</strong> {data.pitchMet ? 'Yes' : 'No'}</p>
         </div>
       ) : (
-        <p>No data yet...</p>
+        <p>Waiting for data...</p>
       )}
     </div>
   );

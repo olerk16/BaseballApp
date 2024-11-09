@@ -11,6 +11,9 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 const redisClient = Redis.createClient();
 
+redisClient.on('error', (error) => console.error("Redis Client Error", error));
+redisClient.on('connect', () => console.log('Connected to Redis'));
+
 const kinesis = new KinesisClient({ region: 'us-east-1' });
 const sendDataToKinesis = async (data) => {
   try {
@@ -33,20 +36,31 @@ wss.on('connection', (ws) => {
   ws.on('message', async (message) => {
     console.log(`Received: ${message}`);
     const pitchData = JSON.parse(message);
-    const { playerId, pitchCount, speed } = pitchData;
+    const { playerId, pitchType, speed, pitchMet, targetLocation } = pitchData;
 
+    await redisClient.hincrby(`pitcher:${playerId}`, 'totalPitches', 1);
 
-    redisClient.hincrby(`pitcher:${playerId}`, 'pitchCount', 1);
-    redisClient.hset(`pitcher:${playerId}`, 'speed', speed);
-    redisClient.hset(`pitcher:${playerId}`, 'pitchMet', pitchMet);
-    redisClient.hset(`pitcher:${playerId}`, 'targetLocation', targetLocation);
+    if (pitchMet) {
+        await redisClient.hincrby(`pitcher:${playerId}`, 'pitchesMetTarget', 1);
+      }
+
+    await redisClient.hset(`pitcher:${playerId}`, 'speed', speed);
+    await redisClient.hset(`pitcher:${playerId}`, 'pitchMet', pitchType);
+    await redisClient.hset(`pitcher:${playerId}`, 'targetLocation', targetLocation);
+
+      // Retrieve the updated counts from Redis
+      const totalPitches = await redisClient.hget(`pitcher:${playerId}`, 'totalPitches');
+      const pitchesMetTarget = await redisClient.hget(`pitcher:${playerId}`, 'pitchesMetTarget');
+
+      // Calculate accuracy as a ratio
+      const accuracy = totalPitches > 0 ? pitchesMetTarget / totalPitches : 0;
 
     ws.send(JSON.stringify({
         type: 'pitchUpdate',
-        data: { playerId, pitchCount, speed, pitchType, pitchMet, targetLocation }
+        data: { playerId, totalPitches, speed, pitchType, pitchMet, targetLocation, accuracy }
     }));
     // Send data to Kinesis for real-time analytics
-    await sendDataToKinesis({ playerId, pitchCount, speed, pitchType, pitchMet, targetLocation });
+    await sendDataToKinesis({ playerId, speed, pitchType, pitchMet, targetLocation, accuracy });
 });
 });
 
