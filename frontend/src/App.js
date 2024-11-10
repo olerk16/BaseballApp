@@ -31,26 +31,30 @@ function App() {
           <p><strong>Hit Target:</strong> {data.pitchMet ? 'Yes' : 'No'}</p>
 
           <h2>Pitch Type Success</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Pitch Type</th>
-                <th>Total Pitches</th>
-                <th>Successful Pitches</th>
-                <th>Success Rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.pitchTypeSuccess.map((pitch) => (
-                <tr key={pitch.pitchType}>
-                  <td>{pitch.pitchType}</td>
-                  <td>{pitch.totalPitches}</td>
-                  <td>{pitch.successfulPitches}</td>
-                  <td>{(pitch.successRate * 100).toFixed(2)}%</td>
+          {data.pitchTypeSuccess ? (
+            <table>
+              <thead>
+                <tr>
+                  <th>Pitch Type</th>
+                  <th>Total Pitches</th>
+                  <th>Successful Pitches</th>
+                  <th>Success Rate</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.pitchTypeSuccess.map((pitch) => (
+                  <tr key={pitch.pitchType}>
+                    <td>{pitch.pitchType}</td>
+                    <td>{pitch.totalPitches}</td>
+                    <td>{pitch.successfulPitches}</td>
+                    <td>{(pitch.successRate * 100).toFixed(2)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p>No pitch type success data available</p>
+          )}
         </div>
       ) : (
         <p>Waiting for data...</p>

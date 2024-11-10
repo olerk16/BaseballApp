@@ -1,4 +1,17 @@
-const { GraphQLSchema, GraphQLObjectType, GraphQLString, GraphQLInt, GraphQLBoolean, GraphQLFloat } = require('graphql');
+const { GraphQLSchema, GraphQLObjectType, GraphQLString, GraphQLInt, GraphQLBoolean, GraphQLFloat, GraphQLList } = require('graphql');
+const { createClient } = require('redis');
+
+const redisClient = createClient();
+redisClient.on('error', (error) => console.error("Redis Client Error:", error));
+redisClient.on('connect', () => console.log('Connected to Redis'));
+
+(async () => {
+  try {
+    await redisClient.connect();
+  } catch (error) {
+    console.error("Error connecting to Redis:", error);
+  }
+})();
 
 const PitchTypeSuccessType = new GraphQLObjectType({
     name: 'PitchTypeSuccess',
@@ -31,7 +44,7 @@ const PitchDataType = new GraphQLObjectType({
       totalPitches: { type: GraphQLInt },
       pitchesMetTarget: { type: GraphQLInt },
       accuracy: { type: GraphQLFloat },
-      pitchTypeSuccess: { type: GraphQLList(PitchTypeSuccessType) }, // Success metrics by pitch type
+      pitchTypeSuccess: { type: new GraphQLList(PitchTypeSuccessType) }, // Success metrics by pitch type
     },
   });
 
@@ -43,12 +56,10 @@ const PitchDataType = new GraphQLObjectType({
         args: { playerId: { type: GraphQLString } },
         async resolve(parent, args) {
           try {
-            // Fetch general metrics
             const totalPitches = await redisClient.hget(`pitcher:${args.playerId}`, 'totalPitches') || 0;
             const pitchesMetTarget = await redisClient.hget(`pitcher:${args.playerId}`, 'pitchesMetTarget') || 0;
             const accuracy = totalPitches > 0 ? pitchesMetTarget / totalPitches : 0;
   
-            // Fetch pitch type-specific metrics
             const pitchTypes = ["fastball", "curveball", "slider"];
             const pitchTypeSuccess = await Promise.all(pitchTypes.map(async (type) => {
               const total = await redisClient.hget(`pitcher:${args.playerId}:pitchType:${type}`, 'totalPitches') || 0;
@@ -72,6 +83,7 @@ const PitchDataType = new GraphQLObjectType({
       },
     },
   });
+  
 
 module.exports.schema = new GraphQLSchema({
   query: RootQuery,

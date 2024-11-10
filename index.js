@@ -3,17 +3,28 @@ const { createServer } = require('http');
 const { WebSocketServer } = require('ws');
 const { graphqlHTTP } = require('express-graphql');
 const { schema } = require('./schema'); 
-const Redis = require('redis');
+const { createClient } = require('redis');
 const { KinesisClient, PutRecordCommand } = require('@aws-sdk/client-kinesis');
-const generateMockData = require('./mockPitchingData');
+const generateMockPitchData = require('./mockPitchingData');
 
 const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
-const redisClient = Redis.createClient();
 
-redisClient.on('error', (error) => console.error("Redis Client Error", error));
+const redisClient = createClient({
+  url: 'redis://127.0.0.1:6379', 
+});
+
+redisClient.on('error', (error) => console.error("Redis Client Error:", error));
 redisClient.on('connect', () => console.log('Connected to Redis'));
+
+(async () => {
+  try {
+    await redisClient.connect();
+  } catch (error) {
+    console.error("Error connecting to Redis:", error);
+  }
+})();
 
 const kinesis = new KinesisClient({ region: 'us-east-1' });
 const sendDataToKinesis = async (data) => {
@@ -24,7 +35,7 @@ const sendDataToKinesis = async (data) => {
       StreamName: 'player_metrics_stream',
     }));
   } catch (error) {
-    console.error("Error sending data to Kinesis", error);
+    console.error("Error sending data to Kinesis:", error, data);
   }
 };
 
@@ -34,60 +45,63 @@ app.use('/graphql', graphqlHTTP({
 }));
 
 wss.on('connection', (ws) => {
-    ws.on('message', async (message) => {
-      const pitchData = JSON.parse(message);
-      const { playerId, pitchType, speed, pitchMet, targetLocation } = pitchData;
-  
-      // General Pitch Metrics
-      await redisClient.hincrby(`pitcher:${playerId}`, 'totalPitches', 1);
-      if (pitchMet) await redisClient.hincrby(`pitcher:${playerId}`, 'pitchesMetTarget', 1);
-  
-      // Pitch Type Metrics
-      await redisClient.hincrby(`pitcher:${playerId}:pitchType:${pitchType}`, 'totalPitches', 1);
-      if (pitchMet) await redisClient.hincrby(`pitcher:${playerId}:pitchType:${pitchType}`, 'successfulPitches', 1);
-  
-      // Retrieve counts for real-time success calculations
-      const totalPitches = await redisClient.hget(`pitcher:${playerId}`, 'totalPitches') || 0;
-      const pitchesMetTarget = await redisClient.hget(`pitcher:${playerId}`, 'pitchesMetTarget') || 0;
-      const accuracy = totalPitches > 0 ? pitchesMetTarget / totalPitches : 0;
-  
-      const totalPitchTypes = await redisClient.hget(`pitcher:${playerId}:pitchType:${pitchType}`, 'totalPitches') || 0;
-      const successfulPitchTypes = await redisClient.hget(`pitcher:${playerId}:pitchType:${pitchType}`, 'successfulPitches') || 0;
-      const pitchTypeSuccessRate = totalPitchTypes > 0 ? successfulPitchTypes / totalPitchTypes : 0;
-  
-      // Send WebSocket update to client
+  const playerId = "test_player1"; 
+
+  const intervalId = setInterval(async () => {
+    try {
+      const pitchData = generateMockPitchData(playerId);
+
+      await redisClient.sendCommand(['HINCRBY', `pitcher:${pitchData.playerId}`, 'totalPitches', '1']);
+      if (pitchData.pitchMet) {
+        await redisClient.sendCommand(['HINCRBY', `pitcher:${pitchData.playerId}`, 'pitchesMetTarget', '1']);
+      }
+
+      await redisClient.sendCommand(['HINCRBY', `pitcher:${pitchData.playerId}:pitchType:${pitchData.pitchType}`, 'totalPitches', '1']);
+      if (pitchData.pitchMet) {
+        await redisClient.sendCommand(['HINCRBY', `pitcher:${pitchData.playerId}:pitchType:${pitchData.pitchType}`, 'successfulPitches', '1']);
+      }
+
+      // Retrieve counts for pitch type success calculations
+      const pitchTypes = ["fastball", "curveball", "slider", "changeup"];
+      const pitchTypeSuccess = await Promise.all(pitchTypes.map(async (type) => {
+        const total = await redisClient.hGet(`pitcher:${pitchData.playerId}:pitchType:${type}`, 'totalPitches') || 0;
+        const successful = await redisClient.hGet(`pitcher:${pitchData.playerId}:pitchType:${type}`, 'successfulPitches') || 0;
+        const successRate = total > 0 ? successful / total : 0;
+        
+        return {
+          pitchType: type,
+          totalPitches: Number(total),
+          successfulPitches: Number(successful),
+          successRate: parseFloat(successRate.toFixed(2))
+        };
+      }));
+
       ws.send(JSON.stringify({
         type: 'pitchUpdate',
-        data: { playerId, totalPitches, speed, pitchType, pitchMet, targetLocation, accuracy, totalPitchTypes, successfulPitchTypes, pitchTypeSuccessRate }
+        data: {
+          playerId: pitchData.playerId,
+          totalPitches: Number(await redisClient.hGet(`pitcher:${pitchData.playerId}`, 'totalPitches')),
+          speed: pitchData.speed,
+          pitchType: pitchData.pitchType,
+          pitchMet: pitchData.pitchMet,
+          targetLocation: pitchData.targetLocation,
+          accuracy: Number(await redisClient.hGet(`pitcher:${pitchData.playerId}`, 'pitchesMetTarget')) / (await redisClient.hGet(`pitcher:${pitchData.playerId}`, 'totalPitches') || 1),
+          pitchTypeSuccess
+        }
       }));
-  
-      // Send data to Kinesis for analytics
-      await sendDataToKinesis({ playerId, speed, pitchType, pitchMet, targetLocation, accuracy, successfulPitchTypes, totalPitchTypes });
-    });
+
+    } catch (error) {
+      console.error("Error during mock data generation or Redis interaction:", error);
+    }
+  }, 3000);
+
+  // Clean up on client disconnect
+  ws.on('close', () => {
+    clearInterval(intervalId);
+    console.log('Client disconnected, stopped sending mock data.');
   });
-  
+});
 
-// wss.on('connection', (ws) => {
-//     console.log('Client connected');
-
-//     const intervalId = setInterval(() => {
-//         const mockData = generateMockData(); 
-        
-//         ws.send(JSON.stringify({
-//             type: 'pitchUpdate',
-//             data: mockData,
-//         }));
-//     }, 3000);
-
-//     ws.on('close', () => {
-//         console.log('Client disconnected');
-//         clearInterval(intervalId); // Stop sending data when the client disconnects
-//     });
-// });
-
-
-
-redisClient.on('connect', () => console.log('Connected to Redis'));
 
 server.listen(4000, () => {
   console.log('Server listening on http://localhost:4000');

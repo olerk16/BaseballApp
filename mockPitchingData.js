@@ -1,23 +1,24 @@
-function generateMockData() {
-    const playerId = 35;
-    const totalPitches = Math.floor(Math.random() * 100) + 1;       // Random pitch count between 1 and 100
-    const speed = Math.random() * 30 + 70;                          // Random speed between 70 and 100 mph
-    const pitchTypes = ['Fastball', 'Curveball', 'Slider', 'Changeup'];
-    const pitchType = pitchTypes[Math.floor(Math.random() * pitchTypes.length)]; // Random pitch type
-    const pitchMet = Math.random() > 0.5 ? 'yes' : 'no';            
-    const targetLocations = ['inside', 'outside', 'high', 'low'];
+function generateMockPitchData(playerId) {
+    const pitchTypes = ["fastball", "curveball", "slider", "changeup"];
+    const targetLocations = [
+      "top-right", "top-center", "top-left",
+      "center-right", "center-left", "center",
+      "low-right", "low-center", "low-left"
+    ];
+  
+    const pitchType = pitchTypes[Math.floor(Math.random() * pitchTypes.length)];
+    const speed = Math.floor(Math.random() * 20) + 80; 
+    const pitchMet = Math.random() > 0.3; // 70% chance the pitch met the target
     const targetLocation = targetLocations[Math.floor(Math.random() * targetLocations.length)];
-    const accuracy = Math.round(Math.random() * 100);               // Random accuracy percentage
-
+    
     return {
-        playerId,
-        totalPitches,
-        speed: speed.toFixed(1), 
-        pitchType,
-        pitchMet,
-        targetLocation,
-        accuracy
+      playerId,
+      pitchType,
+      speed,
+      pitchMet,
+      targetLocation,
     };
-}
+  }
+  
 
-module.exports = generateMockData;
+module.exports = generateMockPitchData;
