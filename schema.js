@@ -6,7 +6,8 @@ const PitchTypeStatsType = new GraphQLObjectType({
   fields: {
     pitchType: { type: GraphQLString },
     totalPitches: { type: GraphQLInt },
-    successRate: { type: GraphQLFloat }
+    successRate: { type: GraphQLFloat },
+    dateTime: { type: GraphQLString },
   }
 });
 
