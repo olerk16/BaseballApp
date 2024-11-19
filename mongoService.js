@@ -40,6 +40,7 @@ async function getAggregatedStats(playerId, timeFrame) {
           totalPitches: { $sum: 1 },
           avgSpeed: { $avg: "$speed" },
           successfulPitches: { $sum: { $cond: ["$pitchMet", 1, 0] } },
+          dateTime: { $first: "$dateTime" }
         },
       },
       {
@@ -47,6 +48,7 @@ async function getAggregatedStats(playerId, timeFrame) {
           pitchType: "$_id",
           totalPitches: 1,
           avgSpeed: 1,
+          dateTime: 1,
           successRate: {
             $cond: [{ $eq: ["$totalPitches", 0] }, 0, { $divide: ["$successfulPitches", "$totalPitches"] }],
           },
